@@ -12,7 +12,7 @@ import {InterceptedMediaResult,} from "~/linkgrabber/LinkGrabberResponse";
 
 import {OnMediaInterceptedFromRequestListener} from "~/media/OnMediaInterceptedFromRequestListener";
 import {MEDIA_BLACKLIST_URLS} from "~/media/MediaBlackList";
-import {getContentType} from "~/utils/HeaderUtils";
+import {getContentType, getContentLength} from "~/utils/HeaderUtils";
 import {getFileExtension, getFileFromHeaders, getFileFromUrl} from "~/utils/URLUtils";
 
 type TabInfo = {
@@ -108,6 +108,21 @@ export abstract class DownloadLinkInterceptor {
         return true
     }
 
+    private doWeAcceptThisFileSize(contentLength: number | null): boolean {
+        if (contentLength === null) {
+            // no Content-Length header, accept it
+            return true
+        }
+        const minKb = Configs.getLatestConfig().captureFileSizeMinimumKb || 0
+        if (minKb > 0) {
+            // skip files smaller than the minimum size
+            if (contentLength < minKb * 1024) {
+                return false
+            }
+        }
+        return true
+    }
+
     protected shouldHandleRequestForDirectDownload(details: WebRequest.OnHeadersReceivedDetailsType): string | false {
         if (!(
             details.type === "main_frame"
@@ -139,6 +154,11 @@ export abstract class DownloadLinkInterceptor {
         }
         const downloadPage = this.getDownloadPage(details)
         if (downloadPage && this.isInConfigBlacklist(downloadPage)) {
+            return false
+        }
+        // check file size minimum requirement
+        const contentLength = getContentLength(responseHeaders)
+        if (!this.doWeAcceptThisFileSize(contentLength)) {
             return false
         }
 
@@ -439,6 +459,11 @@ export abstract class DownloadLinkInterceptor {
             if (this.isInMediaBlackList(downloadPage)) {
                 return false
             }
+        }
+        // check file size minimum requirement
+        const contentLength = getContentLength(getHeaders(details.responseHeaders))
+        if (!this.doWeAcceptThisFileSize(contentLength)) {
+            return false
         }
         return true
     }
